@@ -225,7 +225,7 @@ localparam CONF_STR = {
 	"-;",
 	"O4,Swap Joysticks,No,Yes;",
 	"O5,6 Buttons Mode,No,Yes;",
-	"OLM,Multitap,Disabled,4-Way,TeamPlayer,J-Cart;",
+	"OLM,Multitap,Disabled,4-Way,TeamPlayer: Port1,TeamPlayer: Port2;",
 	"OIJ,Mouse,None,Port1,Port2;",
 	"OK,Mouse Flip Y,No,Yes;",
 	"-;",
@@ -250,7 +250,7 @@ localparam CONF_STR = {
 wire [15:0] status_menumask = {1'b1,~dbg_menu,1'b0,~bk_ena};
 wire [63:0] status;
 wire  [1:0] buttons;
-wire [11:0] joystick_0_USB,joystick_1_USB,joystick_2_USB,joystick_3_USB;
+wire [11:0] joystick_0_USB,joystick_1_USB,joystick_2_USB,joystick_3_USB,joystick_4;
 
 wire        ioctl_download;
 wire        ioctl_wr;
@@ -307,6 +307,7 @@ hps_io #(.STRLEN($size(CONF_STR)>>3), .WIDE(1)) hps_io
 	.joystick_1(joystick_1_USB),
 	.joystick_2(joystick_2_USB),
 	.joystick_3(joystick_3_USB),
+	.joystick_4(joystick_4),
 	.joy_raw({joydb9md_1[4],joydb9md_1[6],joydb9md_1[3:0]}),
 	.buttons(buttons),
 	.forced_scandoubler(forced_scandoubler),
@@ -470,6 +471,7 @@ gen gen
 	.JOY_2(status[4] ? joystick_0 : joystick_1),
 	.JOY_3(joystick_2),
 	.JOY_4(joystick_3),
+	.JOY_5(joystick_4),
 	.MULTITAP(status[22:21]),
 
 	.MOUSE(ps2_mouse),
