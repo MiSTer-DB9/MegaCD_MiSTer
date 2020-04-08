@@ -502,7 +502,7 @@ always@(posedge clk_sys) begin
 									3: cd_out[47:32] <= io_din;
 								endcase 
 							end
-				'h37: io_dout <= joy_raw; 
+				'h0f: io_dout <= joy_raw; 
 				endcase
 			end
 		end
