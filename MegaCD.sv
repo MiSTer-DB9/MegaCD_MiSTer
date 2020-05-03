@@ -1224,7 +1224,7 @@ wire [7:0] SERJOYSTICK_OUT;
 wire [1:0] SER_OPT;
 
 always @(posedge clk_sys) begin
-	if (status[45]) begin
+	if (status[46]) begin
 		SERJOYSTICK_IN[0] <= USER_IN[5];//up
 		SERJOYSTICK_IN[1] <= USER_IN[7];//down 
 		SERJOYSTICK_IN[2] <= USER_IN[1];//left 
