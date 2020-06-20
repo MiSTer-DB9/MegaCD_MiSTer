@@ -231,6 +231,7 @@ localparam CONF_STR = {
 	"P2-;",
 	"P2oUV,UserIO Joystick,Off,DB9MD,DB15 ;",
 	"P2oT,UserIO Players, 1 Player,2 Players;",
+	"P2-;",
 	"P2O4,Swap Joysticks,No,Yes;",
 	"P2O5,6 Buttons Mode,No,Yes;",
 	"P2OLM,Multitap,Disabled,4-Way,TeamPlayer: Port1,TeamPlayer: Port2;",
