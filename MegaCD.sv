@@ -40,8 +40,8 @@ module emu
 	output        CE_PIXEL,
 
 	//Video aspect ratio for HDMI. Most retro systems have ratio 4:3.
-	output  [7:0] VIDEO_ARX,
-	output  [7:0] VIDEO_ARY,
+	output [11:0] VIDEO_ARX,
+	output [11:0] VIDEO_ARY,
 
 	output  [7:0] VGA_R,
 	output  [7:0] VGA_G,
@@ -51,6 +51,34 @@ module emu
 	output        VGA_DE,    // = ~(VBlank | HBlank)
 	output        VGA_F1,
 	output [1:0]  VGA_SL,
+	output        VGA_SCALER, // Force VGA scaler
+
+`ifdef USE_FB
+	// Use framebuffer in DDRAM (USE_FB=1 in qsf)
+	// FB_FORMAT:
+	//    [2:0] : 011=8bpp(palette) 100=16bpp 101=24bpp 110=32bpp
+	//    [3]   : 0=16bits 565 1=16bits 1555
+	//    [4]   : 0=RGB  1=BGR (for 16/24/32 modes)
+	//
+	// FB_STRIDE either 0 (rounded to 256 bytes) or multiple of pixel size (in bytes)
+	output        FB_EN,
+	output  [4:0] FB_FORMAT,
+	output [11:0] FB_WIDTH,
+	output [11:0] FB_HEIGHT,
+	output [31:0] FB_BASE,
+	output [13:0] FB_STRIDE,
+	input         FB_VBL,
+	input         FB_LL,
+	output        FB_FORCE_BLANK,
+
+	// Palette control for 8bit modes.
+	// Ignored for other video modes.
+	output        FB_PAL_CLK,
+	output  [7:0] FB_PAL_ADDR,
+	output [23:0] FB_PAL_DOUT,
+	input  [23:0] FB_PAL_DIN,
+	output        FB_PAL_WR,
+`endif
 
 	output        LED_USER,  // 1 - ON, 0 - OFF.
 
@@ -68,7 +96,7 @@ module emu
 	input         CLK_AUDIO, // 24.576 MHz
 	output [15:0] AUDIO_L,
 	output [15:0] AUDIO_R,
-	output        AUDIO_S, // 1 - signed audio samples, 0 - unsigned
+	output        AUDIO_S,   // 1 - signed audio samples, 0 - unsigned
 	output  [1:0] AUDIO_MIX, // 0 - no mix, 1 - 25%, 2 - 50%, 3 - 100% (mono)
 
 	//ADC
@@ -81,6 +109,7 @@ module emu
 	output        SD_CS,
 	input         SD_CD,
 
+`ifdef USE_DDRAM
 	//High latency DDR3 RAM interface
 	//Use for non-critical time purposes
 	output        DDRAM_CLK,
@@ -93,7 +122,9 @@ module emu
 	output [63:0] DDRAM_DIN,
 	output  [7:0] DDRAM_BE,
 	output        DDRAM_WE,
+`endif
 
+`ifdef USE_SDRAM
 	//SDRAM interface with lower latency
 	output        SDRAM_CLK,
 	output        SDRAM_CKE,
@@ -106,6 +137,20 @@ module emu
 	output        SDRAM_nCAS,
 	output        SDRAM_nRAS,
 	output        SDRAM_nWE,
+`endif
+
+`ifdef DUAL_SDRAM
+	//Secondary SDRAM
+	input         SDRAM2_EN,
+	output        SDRAM2_CLK,
+	output [12:0] SDRAM2_A,
+	output  [1:0] SDRAM2_BA,
+	inout  [15:0] SDRAM2_DQ,
+	output        SDRAM2_nCS,
+	output        SDRAM2_nCAS,
+	output        SDRAM2_nRAS,
+	output        SDRAM2_nWE,
+`endif
 
 	input         UART_CTS,
 	output        UART_RTS,
@@ -144,41 +189,39 @@ assign {UART_RTS, UART_TXD, UART_DTR} = 0;
 assign BUTTONS   = {bk_reload, 1'b0};
 assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 
+wire [1:0] ar = status[50:49];
+wire [7:0] arx,ary;
+
 always_comb begin
-	if (status[10]) begin
-		VIDEO_ARX = 8'd16;
-		VIDEO_ARY = 8'd9;
-	end else begin
-		case(res) // {V30, H40}
-			2'b00: begin // 256 x 224
-				VIDEO_ARX = 8'd64;
-				VIDEO_ARY = 8'd49;
-			end
+	case(res) // {V30, H40}
+		2'b00: begin // 256 x 224
+			arx = 8'd64;
+			ary = 8'd49;
+		end
 
-			2'b01: begin // 320 x 224
-				VIDEO_ARX = status[30] ? 8'd10: 8'd64;
-				VIDEO_ARY = status[30] ? 8'd7 : 8'd49;
-			end
+		2'b01: begin // 320 x 224
+			arx = status[30] ? 8'd10: 8'd64;
+			ary = status[30] ? 8'd7 : 8'd49;
+		end
 
-			2'b10: begin // 256 x 240
-				VIDEO_ARX = 8'd128;
-				VIDEO_ARY = 8'd105;
-			end
+		2'b10: begin // 256 x 240
+			arx = 8'd128;
+			ary = 8'd105;
+		end
 
-			2'b11: begin // 320 x 240
-				VIDEO_ARX = status[30] ? 8'd4 : 8'd128;
-				VIDEO_ARY = status[30] ? 8'd3 : 8'd105;
-			end
-		endcase
-	end
+		2'b11: begin // 320 x 240
+			arx = status[30] ? 8'd4 : 8'd128;
+			ary = status[30] ? 8'd3 : 8'd105;
+		end
+	endcase
 end
 
-//assign VIDEO_ARX = status[10] ? 8'd16 : ((status[30] && wide_ar) ? 8'd10 : 8'd64);
-//assign VIDEO_ARY = status[10] ? 8'd9  : ((status[30] && wide_ar) ? 8'd7  : 8'd49);
+assign VIDEO_ARX  = (!ar) ? arx : (ar - 1'd1);
+assign VIDEO_ARY  = (!ar) ? ary : 12'd0;
+assign VGA_SCALER = 0;
 
-assign AUDIO_S = 1;
+assign AUDIO_S   = 1;
 assign AUDIO_MIX = 0;
-
 assign LED_POWER = {1'b1,MCD_LED_GREEN};
 assign LED_DISK  = {1'b1,MCD_LED_RED};
 assign LED_USER  = rom_download | sav_pending;
@@ -196,6 +239,12 @@ pll pll
 	.locked(locked)
 );
 
+// Status Bit Map:
+//             Upper                             Lower              
+// 0         1         2         3          4         5         6   
+// 01234567890123456789012345678901 23456789012345678901234567890123
+// 0123456789ABCDEFGHIJKLMNOPQRSTUV 0123456789ABCDEFGHIJKLMNOPQRSTUV
+// XXXXXXXXX  XXXXXXXXXXXXXXXX  XXX  XXXXXXXXXXXXXXXXXX
 
 `include "build_id.v"
 localparam CONF_STR = {
@@ -203,6 +252,7 @@ localparam CONF_STR = {
 	"S0,CUE,Insert Disk;",
 	"-;",
 	"O67,Region,JP,US,EU;",
+	"oH,Auto Cart Region,Disabled,Header;",
 	"-;",
 	"C,Cheats;",
 	"H5OO,Cheats Enabled,Yes,No;",
@@ -215,7 +265,7 @@ localparam CONF_STR = {
 
 	"P1,Audio & Video;",
 	"P1-;",
-	"P1OA,Aspect Ratio,4:3,16:9;",
+	"P1oHI,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"P1OU,320x224 Aspect,Original,Corrected;",
 	"P1o13,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"P1-;",
@@ -555,8 +605,8 @@ gen gen
 	.EN_SPR(EN_VDP_SPR),
 
 	.J3BUT(~status[5]),
-	.JOY_1(status[4] ? joystick_1 : joystick_0),
-	.JOY_2(status[4] ? joystick_0 : joystick_1),
+	.JOY_1(status[4] ^ status[46] ? joystick_1 : joystick_0),
+	.JOY_2(status[4] ^ status[46] ? joystick_0 : joystick_1),
 	.JOY_3(joystick_2),
 	.JOY_4(joystick_3),
 	.JOY_5(joystick_4),
@@ -643,7 +693,7 @@ wire        gg_available2;
 
 MCD MCD
 (
-	.RST_N(~reset),
+	.RST_N(~(reset|rom_download)),
 	.CLK(clk_sys),
 	.ENABLE(1),
 	.MCD_RST_N(MCD_RST_N),
@@ -1112,7 +1162,7 @@ always @(posedge clk_sys) begin
 	end
 
 	old_ready <= cart_hdr_ready;
-	if(~old_ready & cart_hdr_ready) begin
+	if(status[49] & ~old_ready & cart_hdr_ready) begin
 		region_set <= 1;
 		if(hdr_u) region_req <= 1;
 		else if(hdr_j) region_req <= 0;
@@ -1268,8 +1318,8 @@ always @(posedge clk_sys) begin
 		SERJOYSTICK_IN[5] <= USER_IN[6];//c TR GPIO7   
 		SERJOYSTICK_IN[6] <= USER_IN[0];//  TH
 		SERJOYSTICK_IN[7] <= 0;
-		SER_OPT[0] <= status[4];
-		SER_OPT[1] <= ~status[4];
+		SER_OPT[0] <= ~status[4];
+		SER_OPT[1] <= status[4];
 		USER_OUT[1] <= SERJOYSTICK_OUT[2];
 		USER_OUT[0] <= SERJOYSTICK_OUT[6];
 		USER_OUT[5] <= SERJOYSTICK_OUT[0];
