@@ -1,7 +1,5 @@
 set_global_assignment -name QIP_FILE rtl/FX68K/fx68k.qip
 set_global_assignment -name QIP_FILE rtl/GEN/GEN.qip
-set_global_assignment -name VERILOG_FILE joydb9md.v
-set_global_assignment -name VERILOG_FILE joydb15.v
 set_global_assignment -name QIP_FILE rtl/MCD/MCD.qip
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/ddram.sv
