@@ -527,7 +527,9 @@ hps_io #(.CONF_STR(CONF_STR), .WIDE(1)) hps_io
 	.new_vmode(new_vmode),
 
 	.status(status),
-	.status_in({status[63:8],2'b00,status[5:0]}),
+	// [MiSTer-DB9 BEGIN] - widened to 128 bits, preserve [127:64] (joy_type at [127:125], joy_2p at [124])
+	.status_in({status[127:8],2'b00,status[5:0]}),
+	// [MiSTer-DB9 END]
 	.status_set(region_reset),
 	.status_menumask(status_menumask),
 
