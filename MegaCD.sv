@@ -194,6 +194,12 @@ wire         joy_2p          = status[125];
 // SNAC cores: replace 1'b0 with the core's SNAC enable expression so SNAC
 // preempts the joydb wrapper on shared USER_IO pins. Default 1'b0 is no-op.
 wire         snac_active     = status[46];
+// MT32-pi probe-suppression gate. Auto-detected from MT32 signals declared
+// elsewhere in this file (mt32_disable / mt32_use / mt32_on_primary). Hand-edit
+// if the heuristic missed your core's gate expression. Suppresses the OSD-open
+// autodetect probe so it doesn't read the RPi's I2C master traffic as a ghost
+// Saturn signature. See the fork hazard notes.
+wire         mt32_primary_active = 1'b0;
 wire   [1:0] joy_type        = snac_active ? 2'd0 : joy_type_raw;
 wire         joy_db9md_en    = (joy_type == 2'd2);
 wire         joy_db15_en     = (joy_type == 2'd3);
@@ -217,6 +223,9 @@ wire  [15:0] joy_raw_payload;
 joydb joydb (
   .clk             ( CLK_JOY         ),
   .USER_IN         ( USER_IN         ),
+  .OSD_STATUS          ( OSD_STATUS          ),
+  .snac_active         ( snac_active         ),
+  .mt32_primary_active ( mt32_primary_active ),
   .joy_type        ( joy_type        ),
   .joy_2p          ( joy_2p          ),
   .saturn_unlocked ( saturn_unlocked ),
@@ -527,7 +536,9 @@ hps_io #(.CONF_STR(CONF_STR), .WIDE(1)) hps_io
 	.new_vmode(new_vmode),
 
 	.status(status),
-	.status_in({status[63:8],2'b00,status[5:0]}),
+	// [MiSTer-DB9 BEGIN] - widened to 128 bits, preserve [127:64] (joy_type at [127:125], joy_2p at [124])
+	.status_in({status[127:8],2'b00,status[5:0]}),
+	// [MiSTer-DB9 END]
 	.status_set(region_reset),
 	.status_menumask(status_menumask),
 
