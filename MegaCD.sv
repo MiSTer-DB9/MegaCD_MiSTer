@@ -30,7 +30,7 @@ module emu
 	input         RESET,
 
 	//Must be passed to hps_io module
-	inout  [45:0] HPS_BUS,
+	inout  [48:0] HPS_BUS,
 
 	//Base video clock. Usually equals to CLK_SYS.
 	output        CLK_VIDEO,
@@ -182,8 +182,8 @@ module emu
 );
 
 
-// [MiSTer-DB9 BEGIN] - DB9/SNAC8 support: USER_PP default (port_batch replaces with USER_PP_DRIVE)
-assign USER_PP = USER_PP_DRIVE;
+// [MiSTer-DB9 BEGIN] - DB9/SNAC8 support: USER_PP default (SNAC drives TH + splitter SEL push-pull)
+assign USER_PP = snac_active ? 8'b00010001 : USER_PP_DRIVE;
 // [MiSTer-DB9 END]
 assign ADC_BUS  = 'Z;
 
@@ -220,8 +220,17 @@ wire  [15:0] joydb_1, joydb_2;
 wire         joydb_1ena, joydb_2ena;
 wire  [15:0] joy_raw_payload;
 
+// [MiSTer-DB9 BEGIN] - DB9 programmable-remap matrix wires
+// joydb_*_mapped = MiSTer-standard joystick words (consumed in Layer B);
+// db9_remap_* = 0xFD selector stream driven by the hps_io instance.
+wire  [15:0] joydb_1_mapped, joydb_2_mapped;
+wire         db9_remap_cmd;
+wire   [5:0] db9_remap_byte_cnt;
+wire  [15:0] db9_remap_din;
+// [MiSTer-DB9 END]
 joydb joydb (
   .clk             ( CLK_JOY         ),
+  .clk_sys         ( clk_sys            ),
   .USER_IN         ( USER_IN         ),
   .OSD_STATUS          ( OSD_STATUS          ),
   .snac_active         ( snac_active         ),
@@ -236,6 +245,11 @@ joydb joydb (
   .joydb_2         ( joydb_2         ),
   .joydb_1ena      ( joydb_1ena      ),
   .joydb_2ena      ( joydb_2ena      ),
+  .remap_cmd       ( db9_remap_cmd      ),
+  .remap_byte_cnt  ( db9_remap_byte_cnt ),
+  .remap_din       ( db9_remap_din      ),
+  .joydb_1_mapped  ( joydb_1_mapped     ),
+  .joydb_2_mapped  ( joydb_2_mapped     ),
   .joy_raw         ( joy_raw_payload )
 );
 
@@ -525,6 +539,10 @@ hps_io #(.CONF_STR(CONF_STR), .WIDE(1)) hps_io
 	.joystick_4(joystick_4_USB),
 	// [MiSTer-DB9 BEGIN] - DB9/SNAC8 support: joy_raw
 	.joy_raw(OSD_STATUS ? joy_raw_payload : 16'b0),
+	// programmable remap matrix selector load (UIO_DB9_MAP 0xFD)
+	.db9_remap_cmd(db9_remap_cmd),
+	.db9_remap_byte_cnt(db9_remap_byte_cnt),
+	.db9_remap_din(db9_remap_din),
 	// [MiSTer-DB9 END]
 	// [MiSTer-DB9-Pro BEGIN] - Saturn key gate
 	.saturn_unlocked(saturn_unlocked),
@@ -662,7 +680,6 @@ wire        GEN_MEM_BUSY;
 
 wire [15:0] GEN_AUDL;
 wire [15:0] GEN_AUDR;
-wire        GEN_CE;
 
 wire [7:0] color_lut[16] = '{
 	8'd0,   8'd27,  8'd49,  8'd71,
@@ -727,7 +744,6 @@ gen gen
 
 	.DAC_LDATA(GEN_AUDL),
 	.DAC_RDATA(GEN_AUDR),
-	.DAC_CE(GEN_CE),
 
 	.RED(r),
 	.GREEN(g),
@@ -940,14 +956,9 @@ end
 	cmp_r <= compr(aud_r);
 end
 
-audio_fix #(250) audio_fix // MCLK/504 in lpf, so choose half to get in the middle of sample period
-(
-	.*,
-	.clk(clk_sys),
-	.ce(GEN_CE),
-	.l(status[58:57] ? cmp_l : aud_l),
-	.r(status[58:57] ? cmp_r : aud_r)
-);
+assign AUDIO_L = status[58:57] ? cmp_l : aud_l;
+assign AUDIO_R = status[58:57] ? cmp_r : aud_r;
+	
 
 //ROM/RAM Cart
 wire [15:0] CART_DO;
@@ -1494,21 +1505,30 @@ always @(posedge clk_sys) begin
 		SERJOYSTICK_IN[7] <= 0;
 		SER_OPT[0] <= ~status[4];
 		SER_OPT[1] <= status[4];
-		USER_OUT[1] <= SERJOYSTICK_OUT[2];
-		USER_OUT[0] <= SERJOYSTICK_OUT[6];
-		USER_OUT[5] <= SERJOYSTICK_OUT[0];
-		USER_OUT[3] <= SERJOYSTICK_OUT[4];
-		USER_OUT[2] <= SERJOYSTICK_OUT[3];
-		USER_OUT[6] <= SERJOYSTICK_OUT[5];
-		USER_OUT[7] <= SERJOYSTICK_OUT[1];
 		end else begin
 		SER_OPT  <= 0;
-		// [MiSTer-DB9 BEGIN] - SerJoystick relay falls through to joydb USER_OUT_DRIVE
-		USER_OUT <= USER_OUT_DRIVE;
-		// [MiSTer-DB9 END]
 		//USER_OUT <= '1;
 	end
 end
+
+// [MiSTer-DB9 BEGIN] - combinational USER_OUT relay (zero CDC vs CLK_JOY).
+// Previous clocked latch added a clk_sys/CLK_JOY CDC skew on USER_IO[2] (2P-MUX
+// SEL) vs USER_IO[0] (TH/SELECT) that broke joydb9md's 6-btn MD handshake
+// through the octopod 2P adapter. Mirrors Genesis.sv/MegaDrive.sv pattern.
+always_comb begin
+	USER_OUT = USER_OUT_DRIVE;
+	if (status[46]) begin
+		USER_OUT[1] = SERJOYSTICK_OUT[2];
+		USER_OUT[0] = SERJOYSTICK_OUT[6];
+		USER_OUT[5] = SERJOYSTICK_OUT[0];
+		USER_OUT[3] = SERJOYSTICK_OUT[4];
+		USER_OUT[2] = SERJOYSTICK_OUT[3];
+		USER_OUT[6] = SERJOYSTICK_OUT[5];
+		USER_OUT[7] = SERJOYSTICK_OUT[1];
+		USER_OUT[4] = 1'b0; //1P selects physical P1
+	end
+end
+// [MiSTer-DB9 END]
 
 
 ///////////////////////////////////////////////
